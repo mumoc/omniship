@@ -718,24 +718,23 @@ module Omniship
     end
 
     def parse_ship_valid_address_street(response, options={})
-      n = 1
       xml = Nokogiri::XML(response)
       puts xml
       success = response_success?(xml)
       response_text = Array.new
       if success
         addresses = xml.xpath('/*/AddressKeyFormat').each do |address_data|
-          response_text = Hash.new
-          address_data.xpath('AddressLine').each do |address_line|
-            response_text["address_#{n}".to_sym] = address_line.text
-            n += 1
+          address = Hash.new
+          address_data.xpath('AddressLine').each_with_index do |address_line, index|
+            address["address#{index + 1}".to_sym] = address_line.text
           end
-          response_text[:region] = address_data.xpath('Region').text
-          response_text[:city] = address_data.xpath('PoliticalDivision2').text
-          response_text[:state] = address_data.xpath('PoliticalDivision1').text
-          response_text[:postal_code] = address_data.xpath('PostcodePrimaryLow').text
-          response_text[:postal_code_extended] = address_data.xpath('PostcodeExtendedLow').text
-          response_text[:country_code] = address_data.xpath("CountryCode").text
+          address[:region] = address_data.xpath('Region').text
+          address[:city] = address_data.xpath('PoliticalDivision2').text
+          address[:state] = address_data.xpath('PoliticalDivision1').text
+          address[:postal_code] = address_data.xpath('PostcodePrimaryLow').text
+          address[:postal_code_extended] = address_data.xpath('PostcodeExtendedLow').text
+          address[:country_code] = address_data.xpath("CountryCode").text
+          response_text << address
         end
       else
         return "Address validation failed!"
