@@ -160,7 +160,7 @@ module Omniship
     end
 
     def validate_address_street(address, city, state, zip_code, country_code, options={})
-      @options = @options.merge(options)
+      options = @options.merge(options)
       access_request = build_access_request
       validate_address_street_request = build_valid_address_street_request(address,city,state,zip_code,country_code)
       options[:test] = options[:test].nil? ? true : options[:test]
@@ -719,7 +719,6 @@ module Omniship
 
     def parse_ship_valid_address_street(response, options={})
       xml = Nokogiri::XML(response)
-      puts xml
       success = response_success?(xml)
       response_text = Array.new
       if success
