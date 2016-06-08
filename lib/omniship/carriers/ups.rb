@@ -636,7 +636,7 @@ module Omniship
       if success
         tracking_number = []
         label = []
-        labe_url = []
+        label_url = []
 
         @response_text[:charges] = xml.xpath('/*/ShipmentResults/*/TotalCharges/MonetaryValue').text
         @response_text[:shipment_id] = xml.xpath('/*/ShipmentResults/ShipmentIdentificationNumber').text
