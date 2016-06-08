@@ -636,6 +636,7 @@ module Omniship
       if success
         tracking_number = []
         label = []
+        labe_url = []
 
         @response_text[:charges] = xml.xpath('/*/ShipmentResults/*/TotalCharges/MonetaryValue').text
         @response_text[:shipment_id] = xml.xpath('/*/ShipmentResults/ShipmentIdentificationNumber').text
@@ -649,6 +650,12 @@ module Omniship
           label << image.text
         end
         @response_text[:label] = label
+
+        xml.xpath('/*/ShipmentResults/*/LabelImage/HTMLImage').each do |image|
+          label_url << image.text
+        end
+        @response_text[:label_url] = label_url
+
         @response_text[:success] = true
       else
         @response_text[:status] = xml.xpath('/*/Response/ResponseStatusDescription').text
