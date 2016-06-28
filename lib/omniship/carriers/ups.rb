@@ -616,13 +616,17 @@ module Omniship
       success = response_success?(xml)
 
       if success
-        @response_text = xml.xpath('//*/ShipmentDigest').text
+        @response_text = {
+          status: 'Success',
+          digest: xml.xpath('//*/ShipmentDigest').text
+        }
       else
-        @response_text = {}
-        @response_text[:status] = xml.xpath('/*/Response/ResponseStatusDescription').text
-        @response_text[:error_severity] = xml.xpath('/*/Response/Error/ErrorSeverity').text
-        @response_text[:error_code] = xml.xpath('/*/Response/Error/ErrorCode').text
-        @response_text[:error_description] = xml.xpath('/*/Response/Error/ErrorDescription').text
+        @response_text = {
+          status:            xml.xpath('/*/Response/ResponseStatusDescription').text,
+          error_severity:    xml.xpath('/*/Response/Error/ErrorSeverity').text,
+          error_code:        xml.xpath('/*/Response/Error/ErrorCode').text,
+          error_description: xml.xpath('/*/Response/Error/ErrorDescription').text
+        }
       end
       return @response_text
     end
@@ -634,6 +638,8 @@ module Omniship
       @response_text = {}
 
       if success
+        @response_text[:status] = 'Success'
+
         tracking_number = []
         label = []
         label_url = []
@@ -654,9 +660,8 @@ module Omniship
         xml.xpath('/*/ShipmentResults/*/LabelImage/HTMLImage').each do |image|
           label_url << image.text
         end
-        @response_text[:label_url] = label_url
 
-        @response_text[:success] = true
+        @response_text[:label_url] = label_url
       else
         @response_text[:status] = xml.xpath('/*/Response/ResponseStatusDescription').text
         @response_text[:error_severity] = xml.xpath('/*/Response/Error/ErrorSeverity').text
