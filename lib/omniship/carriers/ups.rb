@@ -14,6 +14,7 @@ module Omniship
         :track => 'ups.app/xml/Track',
         :shipconfirm => 'ups.app/xml/ShipConfirm',
         :shipaccept => 'ups.app/xml/ShipAccept',
+        :shipevents => 'ups.app/xml/QVEvents',
         :shipvoid => 'ups.app/xml/Void',
         :valid_address => 'ups.app/xml/AV',
         :valid_address_street => 'ups.app/xml/XAV'
@@ -94,6 +95,27 @@ module Omniship
     EU_COUNTRY_CODES = ["GB", "AT", "BE", "BG", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"]
 
     US_TERRITORIES_TREATED_AS_COUNTRIES = ["AS", "FM", "GU", "MH", "MP", "PW", "PR", "VI"]
+
+    QUANTUM_VIEW_GENERIC_ACTIVITY_TYPES = {
+      'VM' => 'Void for Manifest',
+      'UR' => 'Undeliverable Returns',
+      'IR' => 'Invoice Removal Successful',
+      'TC' => 'Transport Company USPS Scan',
+      'PS' => 'Postal Service Possession Scan',
+      'FN' => 'UPS Access Point/Alternate Delivery Location Email Notification Failure',
+      'DS' => 'Destination Scan',
+      'AG' => 'Package is in transit to a UPS Facility',
+      'RE' => 'UPS Returns Exchange',
+      'RP' => 'Retail Pickup'
+    }
+
+    def find_events(options = {})
+      access_request = build_access_request
+      events_request = build_events_request(options)
+
+      response = commit(:shipevents, save_request(access_request.gsub("\n", "") + events_request.gsub("\n", "")), options[:test])
+      parse_events_response(response)
+    end
 
     def requirements
       [:key, :login, :password]
@@ -444,6 +466,34 @@ module Omniship
       builder.to_xml
     end
 
+    def build_events_request(options = {})
+      if options[:begin_date]
+        options[:end_date] ||= options[:begin_date] + 6.days
+      end
+
+      builder = Nokogiri::XML::Builder.new do |xml|
+        xml.QuantumViewRequest {
+          xml.Request {
+            xml.RequestAction 'QvEvents'
+          }
+
+          if options[:subscription]
+            xml.SubscriptionRequest {
+              xml.Name options[:subscription]
+
+              if options[:begin_date]
+                xml.DateTimeRange {
+                  xml.BeginDateTime options[:begin_date].strftime '%Y%m%d%H%I%S'
+                  xml.EndDateTime options[:end_date].strftime '%Y%m%d%H%I%S'
+                }
+              end
+            }
+          end
+        }
+      end
+      builder.to_xml
+    end
+
     def build_tracking_request(tracking_number, options={})
       builder = Nokogiri::XML::Builder.new do |xml|
         xml.TrackRequest {
@@ -609,6 +659,65 @@ module Omniship
       #  :destination => destination,
       #  :tracking_number => tracking_number)
       return shipment_details
+    end
+
+    def parse_events_response(response)
+      xml = Nokogiri::XML(response)
+
+      if response_success?(xml)
+        {
+          status: 'Success',
+          events:  xml.xpath('/*/*/*/SubscriptionFile').map do |subscription|
+            events = []
+
+            subscription.elements.each do |element|
+              next if %{FileName StatusType}.include?(element.name)
+              events << parse_event(element)
+            end
+
+            events
+          end.flatten
+        }
+      else
+        {
+          status:            xml.xpath('/*/Response/ResponseStatusDescription').text,
+          error_severity:    xml.xpath('/*/Response/Error/ErrorSeverity').text,
+          error_code:        xml.xpath('/*/Response/Error/ErrorCode').text,
+          error_description: xml.xpath('/*/Response/Error/ErrorDescription').text
+
+        }
+      end
+    end
+
+    def parse_event(element)
+      event = {
+        activity_category: element.name,
+      }
+
+      case element.name
+      when 'Generic'
+        event.merge!(
+          activity_type:   QUANTUM_VIEW_GENERIC_ACTIVITY_TYPES[element.at('ActivityType').text],
+          date:            DateTime.parse(element.at('Activity').text),
+          tracking_number: element.at('TrackingNumber').text
+        )
+      when 'Delivery'
+        event.merge!(
+          date:            DateTime.parse(element.at('Date').text + element.at('Time')),
+          tracking_number: element.at('TrackingNumber').text
+        )
+      when 'Manifest'
+        event.merge!(
+          date: element.at('PickupDate').text
+        )
+      else
+        event.merge!(
+          date:            DateTime.parse(element.at('Date').text + element.at('Time')),
+          tracking_number: element.at('TrackingNumber').text
+        )
+      end
+
+      event
     end
 
     def parse_ship_confirm_response(origin, destination, packages, response, options={})
