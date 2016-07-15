@@ -613,22 +613,20 @@ module Omniship
 
     def parse_ship_confirm_response(origin, destination, packages, response, options={})
       xml = Nokogiri::XML(response)
-      success = response_success?(xml)
 
-      if success
-        @response_text = {
+      if response_success?(xml)
+        {
           status: 'Success',
           digest: xml.xpath('//*/ShipmentDigest').text
         }
       else
-        @response_text = {
+        {
           status:            xml.xpath('/*/Response/ResponseStatusDescription').text,
           error_severity:    xml.xpath('/*/Response/Error/ErrorSeverity').text,
           error_code:        xml.xpath('/*/Response/Error/ErrorCode').text,
           error_description: xml.xpath('/*/Response/Error/ErrorDescription').text
         }
       end
-      return @response_text
     end
 
     def parse_ship_accept_response(response, options={})
