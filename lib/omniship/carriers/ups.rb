@@ -155,11 +155,11 @@ module Omniship
     end
 
     def accept_shipment(digest, options={})
-      options[:test]      = options[:test].nil? ? true : options[:test]
+      @options.merge!(options)
       access_request      = build_access_request
       ship_accept_request = build_ship_accept(digest)
-      response            = commit(:shipaccept, save_request(access_request.gsub("\n", "") + ship_accept_request.gsub("\n", "")), options[:test])
-      parse_ship_accept_response(response, options)
+      response            = commit(:shipaccept, save_request(access_request.gsub("\n", "") + ship_accept_request.gsub("\n", "")), @options[:test])
+      parse_ship_accept_response(response, @options)
     end
 
     def void_shipment(ups_shipment_id, tracking_numbers = [], options={})
