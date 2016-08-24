@@ -235,8 +235,36 @@ module Omniship
             xml.RequestOption options[:nonvalidate] ? 'nonvalidate' : 'validate'
           }
           xml.Shipment {
+            # Applies to international shipments only
+            if options[:description] && shipment_is_international?(origin, destination)
+              xml.Description(options[:description])
+            end
+
+            # Applies to international shipments whose origin is US and destination is Canada or Puerto Rico
+            if options[:invoice_line_total] && shipment_total_required?(origin, destination)
+              xml.InvoiceLineTotal do |xml|
+                xml.CurrencyCode(options[:invoice_line_total][:currency_code])
+                xml.MonetaryValue(options[:invoice_line_total][:monetary_value].to_i)
+              end
+            end
+
+            # Applies to international shipments, whose ReferenceNumbers should be specified at /Shipment level
+            # rather than at /Shipment/Package level.
+            if options[:references] && !package_references_allowed?(origin, destination)
+              options[:references].each do |reference|
+                xml.ReferenceNumber {
+                  xml.Code reference[:code]
+                  xml.Value reference[:value]
+                  if reference[:barcode]
+                    xml.BarCodeIndicator
+                  end
+                }
+              end
+            end
+
             build_location_node(['Shipper'], (options[:shipper] || origin), options, xml)
             build_location_node(['ShipTo'], destination, options, xml)
+
             if options[:shipper] && options[:shipper] != origin
               build_location_node(['ShipFrom'], origin, options, xml)
             end
@@ -296,7 +324,8 @@ module Omniship
                     }
                   end
                 }
-                if package.options[:references].present?
+
+                if package.options[:references].present? && package_references_allowed?(origin, destination)
                   package.options[:references].each do |reference|
                     xml.ReferenceNumber {
                       xml.Code reference[:code]
@@ -321,6 +350,18 @@ module Omniship
         }
       end
       builder.to_xml
+    end
+
+    def package_references_allowed?(origin, destination)
+      origin.country == destination.country && %w{US PR}.include?(origin.country_code)
+    end
+
+    def shipment_is_international?(origin, destination)
+      origin.country != destination.country
+    end
+
+    def shipment_total_required?(origin, destination)
+      origin.country_code == 'US' && %w{CA PR}.include?(destination.country_code)
     end
 
     def build_ship_accept(digest)
