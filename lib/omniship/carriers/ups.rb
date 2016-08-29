@@ -114,7 +114,7 @@ module Omniship
       events_request = build_events_request(options)
 
       response = commit(:shipevents, save_request(access_request.gsub("\n", "") + events_request.gsub("\n", "")), options[:test])
-      parse_events_response(response)
+      parse_events_response(response, options)
     end
 
     def requirements
@@ -702,7 +702,7 @@ module Omniship
       return shipment_details
     end
 
-    def parse_events_response(response)
+    def parse_events_response(response, options)
       xml = Nokogiri::XML(response)
 
       if response_success?(xml)
@@ -713,7 +713,7 @@ module Omniship
 
             subscription.elements.each do |element|
               next if %{FileName StatusType}.include?(element.name)
-              events << parse_event(element)
+              events << parse_event(element, options)
             end
 
             events
@@ -730,32 +730,23 @@ module Omniship
       end
     end
 
-    def parse_event(element)
+    def parse_event(element, options)
+      timestamp = DateTime.parse(element.at('Date').text + element.at('Time').text)
+
       event = {
         activity_category: element.name,
+        date:              timestamp,
+        tracking_number:   element.at('TrackingNumber').text,
       }
 
-      case element.name
-      when 'Generic'
-        event.merge!(
-          activity_type:   QUANTUM_VIEW_GENERIC_ACTIVITY_TYPES[element.at('ActivityType').text],
-          date:            DateTime.parse(element.at('Activity').text),
-          tracking_number: element.at('TrackingNumber').text
+      if element.name == 'Generic'
+        event[:activity_type] = QUANTUM_VIEW_GENERIC_ACTIVITY_TYPES.fetch(
+          element.at('ActivityType').text
         )
-      when 'Delivery'
-        event.merge!(
-          date:            DateTime.parse(element.at('Date').text + element.at('Time')),
-          tracking_number: element.at('TrackingNumber').text
-        )
-      when 'Manifest'
-        event.merge!(
-          date: element.at('PickupDate').text
-        )
-      else
-        event.merge!(
-          date:            DateTime.parse(element.at('Date').text + element.at('Time')),
-          tracking_number: element.at('TrackingNumber').text
-        )
+      end
+
+      if options[:include_details]
+        event[:details] = Hash.from_xml(element.to_s).fetch(element.name)
       end
 
       event
