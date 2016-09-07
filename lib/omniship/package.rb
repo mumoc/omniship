@@ -10,26 +10,15 @@ module Omniship #:nodoc:
     # Package.new(100, [10, 20, 30], :units => :metric)
     # Package.new(Mass.new(100, :grams), [10, 20, 30].map {|m| Length.new(m, :centimetres)})
     # Package.new(100.grams, [10, 20, 30].map(&:centimetres))
-    def initialize(grams_or_ounces, dimensions, options = {})
+    def initialize(weight, dimensions, options = {})
       options = @@default_options.update(options) if @@default_options
       options.symbolize_keys!
       @options = options
-      
-      @dimensions = [dimensions].flatten.reject {|d| d.nil?}
-      
-      imperial = (options[:units] == :imperial) ||
-        ([grams_or_ounces, *dimensions].all? {|m| m.respond_to?(:unit) && m.unit.to_sym == :imperial})
-      
-      @unit_system = imperial ? :imperial : :metric
-      
-      @weight = attribute_from_metric_or_imperial(grams_or_ounces, Mass, :grams, :ounces)
-      
-      if @dimensions.blank?
-        @dimensions = [Length.new(0, (imperial ? :inches : :centimetres))] * 3
-      else
-        process_dimensions
-      end
-      
+
+      @unit_system = options[:units] || :metric
+      @weight      = determine_weight(weight)
+      @dimensions  = determine_dimensions(dimensions)
+
       @value = Package.cents_from(options[:value])
       @currency = options[:currency] || (options[:value].currency if options[:value].respond_to?(:currency))
       @cylinder = (options[:cylinder] || options[:tube]) ? true : false
@@ -117,7 +106,46 @@ module Omniship #:nodoc:
         return klass.new(obj, (@unit_system == :imperial ? imperial_unit : metric_unit))
       end
     end
-    
+
+    def determine_dimensions(values)
+      values.reject!(&:blank?)
+
+      values = [0, 0, 0] if values.empty?
+
+      values.map! do |dimension|
+        if dimension.respond_to?(:unit)
+          dimension
+        else
+          attribute_from_metric_or_imperial(
+            dimension,
+            Length,
+            :centimetres,
+            :inches
+          )
+        end
+      end
+
+      return values unless values.count < 3
+
+      # Fill dimensions
+      # [1,2] => [1,1,2]
+      # [5] => [5,5,5]
+      # etc..
+      2.downto(values.count) do
+        values.unshift(values[0])
+      end
+
+      values
+    end
+
+    def determine_weight(value)
+      if value.respond_to?(:unit)
+        value
+      else
+        attribute_from_metric_or_imperial(value, Mass, :grams, :ounces)
+      end
+    end
+
     def measure(measurement, ary)
       case measurement
       when Fixnum then ary[measurement] 
@@ -128,18 +156,6 @@ module Omniship #:nodoc:
         self.cylinder? ? (Math::PI * (ary[0] + ary[1]) / 2) : (2 * ary[0]) + (2 * ary[1])
       when :volume then self.cylinder? ? (Math::PI * (ary[0] + ary[1]) / 4)**2 * ary[2] : measure(:box_volume,ary)
       when :box_volume then ary[0] * ary[1] * ary[2]
-      end
-    end
-    
-    def process_dimensions
-      @dimensions = @dimensions.map do |l|
-        attribute_from_metric_or_imperial(l, Length, :centimetres, :inches)
-      end.sort
-      # [1,2] => [1,1,2]
-      # [5] => [5,5,5]
-      # etc..
-      2.downto(@dimensions.length) do |n|
-        @dimensions.unshift(@dimensions[0])
       end
     end
 
