@@ -108,11 +108,11 @@ module Omniship #:nodoc:
     end
 
     def determine_dimensions(values)
-      values.reject!(&:nil?)
+      values.reject!(&:blank?)
+
+      values = [0, 0, 0] if values.empty?
 
       values.map! do |dimension|
-        dimension = 0 if dimension.blank?
-
         if dimension.respond_to?(:unit)
           dimension
         else
