@@ -293,6 +293,7 @@ module Omniship
                   xml.DCISType options[:delivery_confirmation_type]
                 }
               end
+              xml.UPScarbonneutralIndicator if options[:carbon_neutral]
             }
             packages.each do |package|
               imperial = ['US', 'LR', 'MM'].include?(origin.country_code(:alpha2))
