@@ -195,7 +195,7 @@ module Omniship
     def upsified_location(location)
       if location.country_code == 'US' && US_TERRITORIES_TREATED_AS_COUNTRIES.include?(location.state)
         atts = {:country => location.state}
-        [:zip, :city, :address1, :address2, :address3, :phone, :fax, :address_type, :attention_name].each do |att|
+        [:zip, :city, :address1, :address2, :address3, :phone, :fax, :address_type, :attention_name, :company_name].each do |att|
           atts[att] = location.send(att)
         end
         Address.new(atts)
