@@ -185,6 +185,9 @@ module Omniship
 
     def build_ship_request(origin, destination, packages, options={})
       imperial = ['US','LR','MM'].include?(origin.country_code(:alpha2))
+      total_weight = packages.inject(0) do |sum, pkg|
+        sum + (imperial ? pkg.weight : pkg.weight/2.2).to_f
+      end
 
       builder = Nokogiri::XML::Builder.new do |xml|
         xml.ProcessShipmentRequest('xmlns' => 'http://fedex.com/ws/ship/v12') {
@@ -214,15 +217,46 @@ module Omniship
                 }
               }
             }
-            xml.SpecialServicesRequested {
-              xml.SpecialServiceTypes "SATURDAY_DELIVERY" if options[:saturday_delivery]
-              if options[:return_shipment]
-                xml.SpecialServiceTypes "RETURN_SHIPMENT"
-                xml.ReturnShipmentDetail {
-                  xml.ReturnType "PRINT_RETURN_LABEL"
+            if options[:customs]
+              xml.CustomsClearanceDetail {
+                build_location_node(['ImporterOfRecord'], destination, xml)
+                xml.DutiesPayment {
+                  xml.PaymentType 'SENDER'
+                  xml.Payor {
+                    xml.ResponsibleParty {
+                      xml.AccountNumber @options[:account]
+                      xml.Contact nil
+                    }
+                  }
                 }
-              end
-            }
+                xml.DocumentContent 'DOCUMENTS_ONLY'
+                xml.CustomsValue {
+                  xml.Currency options[:customs][:currency]
+                  xml.Amount options[:customs][:amount]
+                }
+                xml.CommercialInvoice nil
+                xml.Commodities {
+                  xml.Name 'Electronics'
+                  xml.NumberOfPieces '1'
+                  xml.Description 'Bike Wheel'
+                  xml.CountryOfManufacture 'US'
+                  xml.Weight {
+                    xml.Units (imperial ? 'LB' : 'KG')
+                    xml.Value total_weight
+                  }
+                  xml.Quantity '1'
+                  xml.QuantityUnits 'EA'
+                  xml.UnitPrice {
+                    xml.Currency 'USD'
+                    xml.Amount '10.00'
+                  }
+                  xml.CustomsValue {
+                    xml.Currency options[:customs][:currency]
+                    xml.Amount options[:customs][:amount]
+                  }
+                }
+              }
+            end
             # TODO: Add options to change the label specifications
             xml.LabelSpecification {
               xml.LabelFormatType 'COMMON2D'
@@ -256,7 +290,17 @@ module Omniship
                 # }
               }
             end
-
+            if options[:saturday_delivery] || options[:return_shipment]
+              xml.SpecialServicesRequested {
+                xml.SpecialServiceTypes "SATURDAY_DELIVERY" if options[:saturday_delivery]
+                if options[:return_shipment]
+                  xml.SpecialServiceTypes "RETURN_SHIPMENT"
+                  xml.ReturnShipmentDetail {
+                    xml.ReturnType "PRINT_RETURN_LABEL"
+                  }
+                end
+              }
+            end
             if !!@options[:notifications]
               xml.SpecialServicesRequested {
                 xml.SpecialServiceTypes "EMAIL_NOTIFICATION"
@@ -358,7 +402,7 @@ module Omniship
         xml.send(name) {
           xml.Contact {
             xml.PersonName location.name unless location.name == "" || location.name == nil
-            xml.CompanyName location.company unless location.company == "" || location.name == nil
+            xml.CompanyName location.company unless location.company == "" || location.company == nil
             xml.PhoneNumber location.phone
           }
           xml.Address {
