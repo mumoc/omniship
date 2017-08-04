@@ -166,7 +166,22 @@ module Omniship
                       xml.OptionType "NO_SIGNATURE_REQUIRED"
                     }
                   end
+                  if options[:dangerous_goods]
+                    xml.SpecialServiceTypes "DANGEROUS_GOODS"
+                  end
                 }
+                if options[:dangerous_goods]
+                  xml.DangerousGoodsDetail {
+                    xml.Regulation 'IATA'
+                    xml.Accessibility 'ACCESSIBLE'
+                    xml.Options 'HAZARDOUS_MATERIALS'
+                    xml.Containers 1
+                  }
+                  xml.Containers {
+                    xml.PackingType 'ALL_PACKED_IN_ONE'
+                    xml.ContainerType 'fiberboard box'
+                  }
+                end
                 # xml.Dimensions {
                 #   [:length, :width, :height].each do |axis|
                 #     name  = axis.to_s.capitalize
@@ -401,8 +416,8 @@ module Omniship
       for name in name
         xml.send(name) {
           xml.Contact {
-            xml.PersonName location.name unless location.name == "" || location.name == nil
-            xml.CompanyName location.company unless location.company == "" || location.company == nil
+            xml.PersonName location.name if location.name.present?
+            xml.CompanyName location.company if location.company.present?
             xml.PhoneNumber location.phone
           }
           xml.Address {
