@@ -284,6 +284,9 @@ module Omniship
                           xml.Description {
                             xml.Id 'UN3481'
                             xml.PackingGroup 'III'
+                            xml.PackingDetails {
+                              xml.PackingInstructions 'Any random thing'
+                            }
                             xml.HazardClass 9
                           }
                           xml.Quantity {
