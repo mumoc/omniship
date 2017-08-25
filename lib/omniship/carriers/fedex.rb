@@ -128,7 +128,6 @@ module Omniship
     protected
     def build_rate_request(origin, destination, packages, options={})
       imperial = ['US','LR','MM'].include?(origin.country_code(:alpha2))
-
       builder = Nokogiri::XML::Builder.new do |xml|
         xml.RateRequest('xmlns' => 'http://fedex.com/ws/rate/v12') {
           build_access_request(xml)
@@ -170,26 +169,6 @@ module Omniship
                     xml.SpecialServiceTypes "DANGEROUS_GOODS"
                   end
                 }
-                if options[:dangerous_goods]
-                  xml.DangerousGoodsDetail {
-                    xml.Regulation 'IATA'
-                    xml.Accessibility 'ACCESSIBLE'
-                    xml.Options 'HAZARDOUS_MATERIALS'
-                    xml.Containers 1
-                  }
-                  xml.Containers {
-                    xml.PackingType 'ALL_PACKED_IN_ONE'
-                    xml.ContainerType 'fiberboard box'
-                  }
-                end
-                # xml.Dimensions {
-                #   [:length, :width, :height].each do |axis|
-                #     name  = axis.to_s.capitalize
-                #     value = ((imperial ? pkg.inches(axis) : pkg.cm(axis)).to_f*1000).round/1000.0
-                #     xml.name value
-                #   end
-                #   xml.Units (imperial ? 'IN' : 'CM')
-                # }
               }
             end
           }
@@ -253,7 +232,7 @@ module Omniship
                 xml.Commodities {
                   xml.Name 'Electronics'
                   xml.NumberOfPieces '1'
-                  xml.Description 'Bike Wheel'
+                  xml.Description 'Bike Parts'
                   xml.CountryOfManufacture 'US'
                   xml.Weight {
                     xml.Units (imperial ? 'LB' : 'KG')
@@ -294,15 +273,45 @@ module Omniship
                       xml.OptionType "NO_SIGNATURE_REQUIRED"
                     }
                   end
+                  if options[:dangerous_goods]
+                    xml.SpecialServiceTypes "DANGEROUS_GOODS"
+                    xml.DangerousGoodsDetail {
+                      xml.Accessibility 'ACCESSIBLE'
+                      xml.Options 'HAZARDOUS_MATERIALS'
+                      xml.Containers {
+                        xml.NumberOfContainers 1
+                        xml.HazardousCommodities {
+                          xml.Description {
+                            xml.Id options[:un_id]
+                            xml.PackingGroup options[:packing_group]
+                            xml.PackingDetails {
+                              xml.PackingInstructions 'Any random thing'
+                            }
+                            xml.HazardClass options[:hazard_class]
+                          }
+                          xml.Quantity {
+                            xml.Amount 1.0
+                            xml.Units 'KG'
+                          }
+                        }
+                      }
+                      xml.Packaging {
+                        xml.Count 1
+                        xml.Units (imperial ? 'LB' : 'KG')
+                      }
+                      xml.Signatory {
+                        xml.ContactName 'Foo bar'
+                        xml.Title 'Mr'
+                        xml.Place 'Place'
+                      }
+                      xml.EmergencyContactNumber options[:emergency_contact_number]
+                      xml.Offeror 'Superpedestrian, LLC'
+                      xml.InfectiousSubstanceResponsibleContact {}
+                      xml.AdditionalHandling {}
+                      xml.RadioactivityDetail {}
+                    }
+                  end
                 }
-                # xml.Dimensions {
-                #   [:length, :width, :height].each do |axis|
-                #     name  = axis.to_s.capitalize
-                #     value = ((imperial ? pkg.inches(axis) : pkg.cm(axis)).to_f*1000).round/1000.0
-                #     xml.send name, value.to_s
-                #   end
-                #   xml.Units (imperial ? 'IN' : 'CM')
-                # }
               }
             end
             if options[:saturday_delivery] || options[:return_shipment]
