@@ -282,12 +282,12 @@ module Omniship
                         xml.NumberOfContainers 1
                         xml.HazardousCommodities {
                           xml.Description {
-                            xml.Id 'UN3481'
-                            xml.PackingGroup 'III'
+                            xml.Id options[:un_id]
+                            xml.PackingGroup options[:packing_group]
                             xml.PackingDetails {
                               xml.PackingInstructions 'Any random thing'
                             }
-                            xml.HazardClass 9
+                            xml.HazardClass options[:hazard_class]
                           }
                           xml.Quantity {
                             xml.Amount 1.0
