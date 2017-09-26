@@ -195,7 +195,7 @@ module Omniship
     def upsified_location(location)
       if location.country_code == 'US' && US_TERRITORIES_TREATED_AS_COUNTRIES.include?(location.state)
         atts = {:country => location.state}
-        [:zip, :city, :address1, :address2, :address3, :phone, :fax, :address_type, :attention_name].each do |att|
+        [:zip, :city, :address1, :address2, :address3, :phone, :fax, :address_type, :attention_name, :company_name].each do |att|
           atts[att] = location.send(att)
         end
         Address.new(atts)
@@ -293,6 +293,7 @@ module Omniship
                   xml.DCISType options[:delivery_confirmation_type]
                 }
               end
+              xml.UPScarbonneutralIndicator if options[:carbon_neutral]
             }
             packages.each do |package|
               imperial = ['US', 'LR', 'MM'].include?(origin.country_code(:alpha2))
@@ -595,13 +596,13 @@ module Omniship
           service_code = rated_shipment.xpath('Service/Code').text.to_s
           days_to_delivery = rated_shipment.xpath('GuaranteedDaysToDelivery').text.to_s.to_i
           delivery_date = days_to_delivery >= 1 ? days_to_delivery.days.from_now.strftime("%Y-%m-%d") : nil
-
           rate_estimates << RateEstimate.new(origin, destination, @@name,
                                              :service_code => service_code,
                                              :service_name => service_name_for(origin, service_code),
                                              :total_price => rated_shipment.xpath('TotalCharges/MonetaryValue').text.to_s.to_f,
                                              :currency => rated_shipment.xpath('TotalCharges/CurrencyCode').text.to_s,
                                              :packages => packages,
+                                             :delivery_date => delivery_date,
                                              :delivery_range => [delivery_date])
         end
       end

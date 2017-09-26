@@ -121,14 +121,13 @@ module Omniship
     def find_tracking_info(tracking_number, options={})
       options          = @options.update(options)
       tracking_request = build_tracking_request(tracking_number, options)
-      response         = commit(save_request(tracking_request), (options[:test] || false)).gsub(/<(\/)?.*?\:(.*?)>/, '<\1\2>')
+      response         = commit(save_request(tracking_request), (options[:test] || false)).gsub("\n", "")
       parse_tracking_response(response, options)
     end
 
     protected
     def build_rate_request(origin, destination, packages, options={})
       imperial = ['US','LR','MM'].include?(origin.country_code(:alpha2))
-
       builder = Nokogiri::XML::Builder.new do |xml|
         xml.RateRequest('xmlns' => 'http://fedex.com/ws/rate/v12') {
           build_access_request(xml)
@@ -166,15 +165,10 @@ module Omniship
                       xml.OptionType "NO_SIGNATURE_REQUIRED"
                     }
                   end
+                  if options[:dangerous_goods]
+                    xml.SpecialServiceTypes "DANGEROUS_GOODS"
+                  end
                 }
-                # xml.Dimensions {
-                #   [:length, :width, :height].each do |axis|
-                #     name  = axis.to_s.capitalize
-                #     value = ((imperial ? pkg.inches(axis) : pkg.cm(axis)).to_f*1000).round/1000.0
-                #     xml.name value
-                #   end
-                #   xml.Units (imperial ? 'IN' : 'CM')
-                # }
               }
             end
           }
@@ -185,6 +179,9 @@ module Omniship
 
     def build_ship_request(origin, destination, packages, options={})
       imperial = ['US','LR','MM'].include?(origin.country_code(:alpha2))
+      total_weight = packages.inject(0) do |sum, pkg|
+        sum + (imperial ? pkg.weight : pkg.weight/2.2).to_f
+      end
 
       builder = Nokogiri::XML::Builder.new do |xml|
         xml.ProcessShipmentRequest('xmlns' => 'http://fedex.com/ws/ship/v12') {
@@ -214,15 +211,46 @@ module Omniship
                 }
               }
             }
-            xml.SpecialServicesRequested {
-              xml.SpecialServiceTypes "SATURDAY_DELIVERY" if options[:saturday_delivery]
-              if options[:return_shipment]
-                xml.SpecialServiceTypes "RETURN_SHIPMENT"
-                xml.ReturnShipmentDetail {
-                  xml.ReturnType "PRINT_RETURN_LABEL"
+            if options[:customs]
+              xml.CustomsClearanceDetail {
+                build_location_node(['ImporterOfRecord'], destination, xml)
+                xml.DutiesPayment {
+                  xml.PaymentType 'SENDER'
+                  xml.Payor {
+                    xml.ResponsibleParty {
+                      xml.AccountNumber @options[:account]
+                      xml.Contact nil
+                    }
+                  }
                 }
-              end
-            }
+                xml.DocumentContent 'DOCUMENTS_ONLY'
+                xml.CustomsValue {
+                  xml.Currency options[:customs][:currency]
+                  xml.Amount options[:customs][:amount]
+                }
+                xml.CommercialInvoice nil
+                xml.Commodities {
+                  xml.Name 'Electronics'
+                  xml.NumberOfPieces '1'
+                  xml.Description 'Bike Parts'
+                  xml.CountryOfManufacture 'US'
+                  xml.Weight {
+                    xml.Units (imperial ? 'LB' : 'KG')
+                    xml.Value total_weight
+                  }
+                  xml.Quantity '1'
+                  xml.QuantityUnits 'EA'
+                  xml.UnitPrice {
+                    xml.Currency 'USD'
+                    xml.Amount '10.00'
+                  }
+                  xml.CustomsValue {
+                    xml.Currency options[:customs][:currency]
+                    xml.Amount options[:customs][:amount]
+                  }
+                }
+              }
+            end
             # TODO: Add options to change the label specifications
             xml.LabelSpecification {
               xml.LabelFormatType 'COMMON2D'
@@ -245,18 +273,58 @@ module Omniship
                       xml.OptionType "NO_SIGNATURE_REQUIRED"
                     }
                   end
+                  if options[:dangerous_goods]
+                    xml.SpecialServiceTypes "DANGEROUS_GOODS"
+                    xml.DangerousGoodsDetail {
+                      xml.Accessibility 'ACCESSIBLE'
+                      xml.Options 'HAZARDOUS_MATERIALS'
+                      xml.Containers {
+                        xml.NumberOfContainers 1
+                        xml.HazardousCommodities {
+                          xml.Description {
+                            xml.Id options[:un_id]
+                            xml.PackingGroup options[:packing_group]
+                            xml.PackingDetails {
+                              xml.PackingInstructions 'Any random thing'
+                            }
+                            xml.HazardClass options[:hazard_class]
+                          }
+                          xml.Quantity {
+                            xml.Amount 1.0
+                            xml.Units 'KG'
+                          }
+                        }
+                      }
+                      xml.Packaging {
+                        xml.Count 1
+                        xml.Units (imperial ? 'LB' : 'KG')
+                      }
+                      xml.Signatory {
+                        xml.ContactName 'Foo bar'
+                        xml.Title 'Mr'
+                        xml.Place 'Place'
+                      }
+                      xml.EmergencyContactNumber options[:emergency_contact_number]
+                      xml.Offeror 'Superpedestrian, LLC'
+                      xml.InfectiousSubstanceResponsibleContact {}
+                      xml.AdditionalHandling {}
+                      xml.RadioactivityDetail {}
+                    }
+                  end
                 }
-                # xml.Dimensions {
-                #   [:length, :width, :height].each do |axis|
-                #     name  = axis.to_s.capitalize
-                #     value = ((imperial ? pkg.inches(axis) : pkg.cm(axis)).to_f*1000).round/1000.0
-                #     xml.send name, value.to_s
-                #   end
-                #   xml.Units (imperial ? 'IN' : 'CM')
-                # }
               }
             end
-
+            if options[:saturday_delivery] || options[:return_shipment]
+              xml.SpecialServicesRequested {
+                xml.SpecialServiceTypes "SATURDAY_DELIVERY" if options[:saturday_delivery]
+                if options[:return_shipment]
+                  xml.SpecialServiceTypes "RETURN_SHIPMENT"
+                  xml.ReturnShipmentDetail {
+                    xml.ReturnType "PRINT_RETURN_LABEL"
+                  }
+                end
+              }
+            end
             if !!@options[:notifications]
               xml.SpecialServicesRequested {
                 xml.SpecialServiceTypes "EMAIL_NOTIFICATION"
@@ -312,27 +380,25 @@ module Omniship
     end
 
     def build_tracking_request(tracking_number, options={})
-      xml_request = XmlNode.new('TrackRequest', 'xmlns' => 'http://fedex.com/ws/track/v3') do |root_node|
-        root_node << build_request_header
-
-        # Version
-        root_node << XmlNode.new('Version') do |version_node|
-          version_node << XmlNode.new('ServiceId', 'trck')
-          version_node << XmlNode.new('Major', '3')
-          version_node << XmlNode.new('Intermediate', '0')
-          version_node << XmlNode.new('Minor', '0')
-        end
-
-        root_node << XmlNode.new('PackageIdentifier') do |package_node|
-          package_node << XmlNode.new('Value', tracking_number)
-          package_node << XmlNode.new('Type', PackageIdentifierTypes[options['package_identifier_type'] || 'tracking_number'])
-        end
-
-        root_node << XmlNode.new('ShipDateRangeBegin', options['ship_date_range_begin']) if options['ship_date_range_begin']
-        root_node << XmlNode.new('ShipDateRangeEnd', options['ship_date_range_end']) if options['ship_date_range_end']
-        root_node << XmlNode.new('IncludeDetailedScans', 1)
+      builder = Nokogiri::XML::Builder.new do |xml|
+        xml.TrackRequest('xmlns' => 'http://fedex.com/ws/track/v3') {
+          build_access_request(xml)
+          xml.Version {
+            xml.ServiceId 'trck'
+            xml.Major '3'
+            xml.Intermediate '0'
+            xml.Minor '0'
+           }
+          xml.PackageIdentifier {
+            xml.Value tracking_number
+            xml.Type PackageIdentifierTypes[options['package_identifier_type'] || 'tracking_number']
+          }
+          xml.ShipDateRangeBegin options['ship_date_range_begin'] if options['ship_date_range_begin']
+          xml.ShipDateRangeEnd options['ship_date_range_end'] if options['ship_date_range_end']
+          xml.IncludeDetailedScans 1
+        }
       end
-      xml_request.to_s
+      builder.to_xml
     end
 
     def build_access_request(xml)
@@ -357,8 +423,8 @@ module Omniship
       for name in name
         xml.send(name) {
           xml.Contact {
-            xml.PersonName location.name unless location.name == "" || location.name == nil
-            xml.CompanyName location.company unless location.company == "" || location.name == nil
+            xml.PersonName location.name if location.name.present?
+            xml.CompanyName location.company if location.company.present?
             xml.PhoneNumber location.phone
           }
           xml.Address {
@@ -376,7 +442,6 @@ module Omniship
 
     def parse_rate_response(origin, destination, packages, response, options)
       xml = Nokogiri::XML(response).remove_namespaces!
-      puts xml
       rate_estimates   = []
       success, message = nil
 
@@ -399,12 +464,12 @@ module Omniship
         message = "No shipping rates could be found for the destination address" if message.blank?
       end
 
+
       RateResponse.new(success, message, Hash.from_xml(response), :rates => rate_estimates, :xml => response, :request => last_request, :log_xml => options[:log_xml])
     end
 
     def parse_ship_response(response, options)
       xml             = Nokogiri::XML(response).remove_namespaces!
-      puts xml
       success         = response_success?(xml)
       message         = response_message(xml)
       label           = nil
@@ -428,8 +493,8 @@ module Omniship
     end
 
     def parse_tracking_response(response, options)
-      xml = REXML::Document.new(response)
-      root_node = xml.elements['TrackReply']
+      xml = Nokogiri::XML(response).remove_namespaces!
+      root_node = xml.xpath('TrackReply')
 
       success = response_success?(xml)
       message = response_message(xml)
@@ -438,37 +503,36 @@ module Omniship
         tracking_number, origin, destination = nil
         shipment_events = []
 
-        tracking_details = root_node.elements['TrackDetails']
-        tracking_number = tracking_details.get_text('TrackingNumber').to_s
+        tracking_details = root_node.xpath('TrackDetails')
+        tracking_number = tracking_details.xpath('TrackingNumber').text
 
-        destination_node = tracking_details.elements['DestinationAddress']
+        destination_node = tracking_details.xpath('DestinationAddress')
         destination = Address.new(
-              :country =>     destination_node.get_text('CountryCode').to_s,
-              :province =>    destination_node.get_text('StateOrProvinceCode').to_s,
-              :city =>        destination_node.get_text('City').to_s
+              :country =>     destination_node.xpath('CountryCode').text,
+              :province =>    destination_node.xpath('StateOrProvinceCode').text,
+              :city =>        destination_node.xpath('City').text
             )
 
-        tracking_details.elements.each('Events') do |event|
-          address  = event.elements['Address']
+        tracking_details.xpath('Events').each do |event|
+          address  = event.xpath('Address')
 
-          city     = address.get_text('City').to_s
-          state    = address.get_text('StateOrProvinceCode').to_s
-          zip_code = address.get_text('PostalCode').to_s
-          country  = address.get_text('CountryCode').to_s
+          city     = address.xpath('City').text
+          state    = address.xpath('StateOrProvinceCode').text
+          zip_code = address.xpath('PostalCode').text
+          country  = address.xpath('CountryCode').text
           next if country.blank?
 
           location = Address.new(:city => city, :state => state, :postal_code => zip_code, :country => country)
-          description = event.get_text('EventDescription').to_s
+          description = event.xpath('EventDescription').text
 
           # for now, just assume UTC, even though it probably isn't
-          time = Time.parse("#{event.get_text('Timestamp').to_s}")
+          time = Time.parse("#{event.xpath('Timestamp').text}")
           zoneless_time = Time.utc(time.year, time.month, time.mday, time.hour, time.min, time.sec)
 
           shipment_events << ShipmentEvent.new(description, zoneless_time, location)
         end
         shipment_events = shipment_events.sort_by(&:time)
       end
-
       TrackingResponse.new(success, message, Hash.from_xml(response),
         :xml             => response,
         :request         => last_request,
